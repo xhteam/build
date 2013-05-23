@@ -123,4 +123,41 @@ GRANDFATHERED_ALL_PREBUILT := \
 	wl1271.bin \
 	zoneinfo.dat \
 	zoneinfo.idx \
-	zoneinfo.version
+	zoneinfo.version \
+	alsa.conf \
+	dsnoop.conf \
+	modem.conf \
+	dpl.conf \
+	default.conf \
+	surround51.conf \
+	surround41.conf \
+	surround50.conf \
+	dmix.conf \
+	center_lfe.conf \
+	surround40.conf \
+	side.conf \
+	iec958.conf \
+	rear.conf \
+	surround71.conf \
+	front.conf \
+	aliases.conf \
+	ar6000.ko				\
+	wlan_tool				\
+	wmiconfig				\
+	athwlan.bin				\
+	data.patch.hw2_0.bin			\
+	otp.bin					\
+	bdata.SD31.bin				\
+	athwlan.bin.z77				\
+	data.patch.bin				\
+	otp.bin.z77				\
+	athtcmd_ram.bin				\
+	athwlan_router.bin                      \
+	athwlan_mobile.bin                      \
+	athwlan_tablet.bin                      \
+	data.patch.hw3_0.bin                    \
+	device.bin                              \
+	hostapd_cli 				\
+	hostapd_wps				\
+	hostapd                                 \
+	wlan_tool_6102

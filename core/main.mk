@@ -747,18 +747,24 @@ userdatatarball: $(INSTALLED_USERDATATARBALL_TARGET)
 .PHONY: bootimage
 bootimage: $(INSTALLED_BOOTIMAGE_TARGET)
 
+.PHONY: recoveryimage
+recoveryimage: $(INSTALLED_RECOVERYIMAGE_TARGET)
+
 ifeq ($(BUILD_TINY_ANDROID), true)
 INSTALLED_RECOVERYIMAGE_TARGET :=
 endif
 
 # Build files and then package it into the rom formats
 .PHONY: droidcore
-droidcore: files \
+droidcore: kernelimage \
+	bootloader \
+	files \
 	systemimage \
 	$(INSTALLED_BOOTIMAGE_TARGET) \
 	$(INSTALLED_RECOVERYIMAGE_TARGET) \
 	$(INSTALLED_USERDATAIMAGE_TARGET) \
-	$(INSTALLED_FILES_FILE)
+	$(INSTALLED_FILES_FILE) \
+	ubifs_raw
 
 # dist_files only for putting your library into the dist directory with a full build.
 .PHONY: dist_files

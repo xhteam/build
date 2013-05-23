@@ -616,7 +616,11 @@ define build-userimage-ext-target
 	  $(MKEXTUSERIMG) $(INTERNAL_USERIMAGES_SPARSE_EXT_FLAG) $(1) $(2) $(4) $(3) $(5)
 endef
 else
+ifeq ($(INTERNAL_USERIMAGES_USE_UBIFS),true)
+INTERNAL_MKUSERFS := $(MKUBIFS)
+else
 INTERNAL_USERIMAGES_DEPS := $(MKYAFFS2)
+endif
 endif
 
 # -----------------------------------------------------------------
@@ -689,7 +693,8 @@ $(INSTALLED_RECOVERYIMAGE_TARGET): $(MKBOOTFS) $(MKBOOTIMG) $(MINIGZIP) \
 		$(INSTALLED_2NDBOOTLOADER_TARGET) \
 		$(recovery_build_prop) $(recovery_resource_deps) \
 		$(recovery_fstab) \
-		$(RECOVERY_INSTALL_OTA_KEYS)
+		$(RECOVERY_INSTALL_OTA_KEYS) \
+		private_recoveryimage_helper
 	@echo ----- Making recovery image ------
 	rm -rf $(TARGET_RECOVERY_OUT)
 	mkdir -p $(TARGET_RECOVERY_OUT)
@@ -710,6 +715,7 @@ $(INSTALLED_RECOVERYIMAGE_TARGET): $(MKBOOTFS) $(MKBOOTIMG) $(MINIGZIP) \
 	cp $(RECOVERY_INSTALL_OTA_KEYS) $(TARGET_RECOVERY_ROOT_OUT)/res/keys
 	cat $(INSTALLED_DEFAULT_PROP_TARGET) $(recovery_build_prop) \
 	        > $(TARGET_RECOVERY_ROOT_OUT)/default.prop
+	$(call copy_private_recovery_helper)
 	$(MKBOOTFS) $(TARGET_RECOVERY_ROOT_OUT) | $(MINIGZIP) > $(recovery_ramdisk)
 	$(MKBOOTIMG) $(INTERNAL_RECOVERYIMAGE_ARGS) --output $@
 	@echo ----- Made recovery image -------- $@
@@ -719,8 +725,95 @@ else
 INSTALLED_RECOVERYIMAGE_TARGET :=
 endif
 
-.PHONY: recoveryimage
-recoveryimage: $(INSTALLED_RECOVERYIMAGE_TARGET)
+.PHONY: bootloader
+ifneq ($(strip $(TARGET_BOOTLOADER_CONFIG)),)
+BOOTLOADER_CROSS_TOOLCHAIN := `pwd`/prebuilt/linux-x86/toolchain/arm-eabi-4.4.3/bin/arm-eabi-
+BOOTLOADER_ENV := ARCH=arm CROSS_COMPILE=$(BOOTLOADER_CROSS_TOOLCHAIN)
+HOST_PROCESSOR := $(shell cat /proc/cpuinfo | grep processor | wc -l)
+TARGET_BOOTLOADER_IMAGE := $(PRODUCT_OUT)/u-boot.bin
+
+BOOTLOADER_PATH := bootable/bootloader/uboot-imx/
+BOOTLOADER_CONFIG_FILE := $(BOOTLOADER_PATH)/include/config.h
+
+bootloader: $(TARGET_BOOTLOADER_IMAGE)
+
+$(TARGET_BOOTLOADER_IMAGE):
+	@for ubootplat in $(TARGET_BOOTLOADER_CONFIG); do \
+		UBOOT_PLATFORM=`echo $$ubootplat | cut -d':' -f1`; \
+		UBOOT_CONFIG=`echo $$ubootplat | cut -d':' -f2`; \
+		$(MAKE) -C bootable/bootloader/uboot-imx/ distclean; \
+		$(MAKE) -C bootable/bootloader/uboot-imx/ $$UBOOT_CONFIG $(BOOTLOADER_ENV); \
+		$(MAKE) -C bootable/bootloader/uboot-imx/ $(BOOTLOADER_ENV); \
+		install -D bootable/bootloader/uboot-imx/u-boot.bin $(PRODUCT_OUT)/u-boot-$$UBOOT_PLATFORM.bin; \
+		install -D bootable/bootloader/uboot-imx/u-boot.bin $@; \
+	done
+else
+bootloader:
+endif
+
+
+.PHONY: kernelimage
+ifneq ($(strip $(TARGET_NO_KERNEL)),true)
+KERNEL_CROSS_TOOLCHAIN := `pwd`/prebuilt/linux-x86/toolchain/arm-eabi-4.4.3/bin/arm-eabi-
+KERNEL_ENV := ARCH=arm CROSS_COMPILE=$(KERNEL_CROSS_TOOLCHAIN)
+HOST_PROCESSOR := $(shell cat /proc/cpuinfo | grep processor | wc -l)
+INSTALLED_KERNEL_TARGET := $(PRODUCT_OUT)/kernel
+TARGET_PREBUILT_KERNEL := $(PRODUCT_OUT)/kernel
+KERNEL_CONFIGURE := kernel_imx/.config
+KERNEL_OUT := $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ
+KERNEL_HEADERS_INSTALL := $(KERNEL_OUT)/usr
+
+.PHONY: $(TARGET_PREBUILT_KERNEL)
+kernelimage: $(TARGET_PREBUILT_KERNEL)
+
+$(KERNEL_CONFIGURE): kernel_imx/arch/arm/configs/$(TARGET_KERNEL_DEFCONF)
+	$(MAKE) -C kernel_imx $(TARGET_KERNEL_DEFCONF) $(KERNEL_ENV)
+
+$(KERNEL_HEADERS_INSTALL): $(KERNEL_CONFIGURE)
+	install -d $(KERNEL_OUT)
+	$(MAKE) -C kernel_imx -j$(HOST_PROCESSOR) O=../$(KERNEL_OUT) $(KERNEL_ENV) headers_install
+
+$(TARGET_PREBUILT_KERNEL): $(KERNEL_CONFIGURE)
+	$(MAKE) -C kernel_imx -j$(HOST_PROCESSOR) uImage $(KERNEL_ENV)
+	install -D kernel_imx/arch/arm/boot/uImage $(PRODUCT_OUT)/uImage
+	install -D kernel_imx/arch/arm/boot/zImage $(PRODUCT_OUT)/kernel
+
+else
+kernelimage:
+endif
+
+.PHONY: private_recoveryimage_helper
+ifneq ($(TARGET_NO_RECOVERY),true)
+
+BIN_HELPER := linker sh
+LIB_HELPER := libc.so libm.so libstdc++.so
+
+ifeq ($(TARGET_USERIMAGES_USE_EXT4),true)
+BIN_HELPER += mke2fs
+LIB_HELPER += libext2_blkid.so libext2_com_err.so \
+	      libext2_e2p.so libext2fs.so libext2_profile.so \
+	      libext2_uuid.so
+endif
+
+ifeq ($(TARGET_USERIMAGES_USE_UBIFS),true)
+BIN_HELPER += ubiupdatevol ubiformat ubiattach ubidetach
+LIB_HELPER += libubi.so
+endif
+
+BIN_HELPER := $(addprefix $(TARGET_OUT)/bin/, $(BIN_HELPER))
+LIB_HELPER := $(addprefix $(TARGET_OUT)/lib/, $(LIB_HELPER))
+
+private_recoveryimage_help :=
+
+private_recoveryimage_helper: $(BIN_HELPER) $(LIB_HELPER)
+
+define copy_private_recovery_helper
+	mkdir -p $(TARGET_RECOVERY_ROOT_OUT)/system/bin/
+	mkdir -p $(TARGET_RECOVERY_ROOT_OUT)/system/lib/
+	cp -f $(BIN_HELPER) $(TARGET_RECOVERY_ROOT_OUT)/system/bin/
+	cp -f $(LIB_HELPER) $(TARGET_RECOVERY_ROOT_OUT)/system/lib/
+endef
+endif
 
 ifneq ($(BOARD_NAND_PAGE_SIZE),)
 mkyaffs2_extra_flags := -c $(BOARD_NAND_PAGE_SIZE)
@@ -782,6 +875,15 @@ endef
 
 else # INTERNAL_USERIMAGES_USE_EXT != true
 
+ifeq ($(TARGET_USERIMAGES_USE_UBIFS),true)
+define build-systemimage-target
+    @echo "Target system fs ubi image: $(1)"
+    @mkdir -p $(dir $(1))
+    $(hide) $(MKUBIFS) -d $(TARGET_OUT) -o $(1) $(TARGET_MKUBIFS_ARGS)
+endef
+
+else
+
 ## generate a yaffs2 image
 # $(1): output file
 define build-systemimage-target
@@ -789,6 +891,7 @@ define build-systemimage-target
     @mkdir -p $(dir $(1))
     $(hide) $(MKYAFFS2) -f $(mkyaffs2_extra_flags) $(TARGET_OUT) $(1)
 endef
+endif # INTERNAL_USERIMAGES_USE_UBIFS
 endif # INTERNAL_USERIMAGES_USE_EXT
 
 $(BUILT_SYSTEMIMAGE): $(FULL_SYSTEMIMAGE_DEPS) $(INSTALLED_FILES_FILE)
@@ -901,6 +1004,15 @@ endef
 
 else # INTERNAL_USERIMAGES_USE_EXT != true
 
+ifeq ($(TARGET_USERIMAGES_USE_UBIFS),true)
+define build-userdataimage-target
+    $(call pretty,"Target userdata fs image: $(INSTALLED_USERDATAIMAGE_TARGET)")
+    $(hide) $(MKUBIFS) -d $(TARGET_OUT_DATA) -o $(INSTALLED_USERDATAIMAGE_TARGET) $(TARGET_MKUBIFS_ARGS)
+    $(hide) $(call assert-max-file-size,$(INSTALLED_USERDATAIMAGE_TARGET),$(BOARD_USERDATAIMAGE_MAX_SIZE))
+endef
+
+else
+
 ## Generate a yaffs2 image
 define build-userdataimage-target
     $(call pretty,"Target userdata fs image: $(INSTALLED_USERDATAIMAGE_TARGET)")
@@ -908,6 +1020,7 @@ define build-userdataimage-target
     $(hide) $(MKYAFFS2) -f $(mkyaffs2_extra_flags) $(TARGET_OUT_DATA) $(INSTALLED_USERDATAIMAGE_TARGET)
     $(hide) $(call assert-max-image-size,$(INSTALLED_USERDATAIMAGE_TARGET),$(BOARD_USERDATAIMAGE_PARTITION_SIZE),yaffs)
 endef
+endif # INTERNAL_USERIMAGES_USE_UBIFS
 endif # INTERNAL_USERIMAGES_USE_EXT
 
 BUILT_USERDATAIMAGE_TARGET := $(PRODUCT_OUT)/userdata.img
@@ -942,6 +1055,15 @@ $(INSTALLED_USERDATATARBALL_TARGET): $(FS_GET_STATS) $(INTERNAL_USERDATAIMAGE_FI
 userdatatarball-nodeps: $(FS_GET_STATS)
 	$(build-userdatatarball-target)
 
+.PHONY: ubifs_raw
+ifeq ($(TARGET_USERIMAGES_USE_UBIFS),true)
+UBI_RAW_IMAGE := $(PRODUCT_OUT)/android_root.img
+ubifs_raw: $(INSTALLED_USERDATAIMAGE_TARGET) $(INSTALLED_SYSTEMIMAGE)
+	$(call pretty,"Generating UBI raw image:" "$(UBI_RAW_IMAGE)" "$(UBI_RAW_RECO_IMAGE)")
+	$(hide) $(MKUBIRAW) -o $(UBI_RAW_IMAGE) $(TARGET_UBIRAW_ARGS)
+else
+ubifs_raw:
+endif
 
 # -----------------------------------------------------------------
 # bring in the installer image generation defines if necessary
