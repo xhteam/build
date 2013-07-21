@@ -199,6 +199,7 @@ function set_stuff_for_environment()
     set_sequence_number
 
     export ANDROID_BUILD_TOP=$(gettop)
+    export ANDROID_SRC_ROOT=$(gettop)
 }
 
 function set_sequence_number()
