@@ -734,8 +734,15 @@ KERNEL_OUT := $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ
 KERNEL_HEADERS_INSTALL := $(KERNEL_OUT)/usr
 
 
-.PHONY: $(TARGET_PREBUILT_KERNEL)
+.PHONY: $(TARGET_PREBUILT_KERNEL) kernelconfig
 kernelimage: $(TARGET_PREBUILT_KERNEL)
+kernelconfig:
+	@echo "configuring kernel_imx [$(TARGET_KERNEL_DEFCONF)]..."
+	cp -f kernel_imx/arch/arm/configs/$(TARGET_KERNEL_DEFCONF) kernel_imx/.config
+	make -C kernel_imx menuconfig $(KERNEL_ENV)
+	cp -f kernel_imx/.config kernel_imx/arch/arm/configs/$(TARGET_KERNEL_DEFCONF)
+	@echo "update kernel_imx [$(TARGET_KERNEL_DEFCONF)]...ok"
+
 
 $(KERNEL_CONFIGURE): kernel_imx/arch/arm/configs/$(TARGET_KERNEL_DEFCONF)
 	$(MAKE) -C kernel_imx $(TARGET_KERNEL_DEFCONF) $(KERNEL_ENV)
